@@ -282,5 +282,40 @@ class AudioPipeline:
             print(f"Warning: Utterance queue full, dropping {utterance.duration:.1f}s utterance")
 
     def _transcribe_loop(self) -> None:
-        """Transcription thread - implemented in next step."""
-        pass
+        """
+        Transcription thread.
+
+        Consumes utterances and calls Google Speech API.
+        Network I/O releases the GIL - doesn't block capture.
+        """
+        while self._running:
+            try:
+                utterance = self._utterance_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if utterance is None:  # Poison pill
+                break
+
+            try:
+                # Recognition - releases GIL during network I/O
+                text = self.recognizer.recognize_google(utterance.audio)
+
+                self.metrics.utterances_transcribed += 1
+
+                # Invoke callback
+                try:
+                    self.on_transcript(text, utterance)
+                except Exception as e:
+                    self.on_error(e)
+
+            except sr.UnknownValueError:
+                # No speech recognized - not an error, just skip
+                pass
+            except sr.RequestError as e:
+                # API error - warn and continue
+                self.metrics.transcription_errors += 1
+                self.on_error(e)
+            except Exception as e:
+                self.metrics.transcription_errors += 1
+                self.on_error(e)
