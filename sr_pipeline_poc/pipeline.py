@@ -1,0 +1,150 @@
+"""Three-thread audio pipeline for speech recognition."""
+
+import threading
+import queue
+import time
+import collections
+from typing import Callable, Optional
+import speech_recognition as sr
+
+from .types import AudioChunk, Utterance, PipelineMetrics, VADResult
+from .energy_vad import EnergyVAD
+
+
+# Type aliases for callbacks
+TranscriptCallback = Callable[[str, Utterance], None]
+ErrorCallback = Callable[[Exception], None]
+
+
+# Hardcoded POC configuration
+ENERGY_THRESHOLD = 300.0
+SILENCE_TIMEOUT = 0.8         # seconds
+SPEECH_PADDING = 0.3          # seconds
+MAX_SPEECH_DURATION = 30.0    # seconds
+FRAME_DURATION_MS = 30        # milliseconds
+CAPTURE_QUEUE_SIZE = 100
+UTTERANCE_QUEUE_SIZE = 10
+
+
+class AudioPipeline:
+    """
+    Decoupled audio capture and processing pipeline.
+
+    Separates capture, VAD/segmentation, and transcription into independent
+    threads to prevent audio drops during transcription.
+    """
+
+    def __init__(
+        self,
+        recognizer: sr.Recognizer,
+        source: sr.Microphone,
+        on_transcript: TranscriptCallback,
+        on_error: Optional[ErrorCallback] = None,
+    ):
+        """
+        Initialize AudioPipeline.
+
+        Args:
+            recognizer: speech_recognition Recognizer instance
+            source: speech_recognition Microphone instance
+            on_transcript: Callback for transcription results (text, utterance)
+            on_error: Optional callback for errors
+        """
+        self.recognizer = recognizer
+        self.source = source
+        self.on_transcript = on_transcript
+        self.on_error = on_error or self._default_error_handler
+
+        # VAD setup
+        self.vad = EnergyVAD(threshold=recognizer.energy_threshold)
+
+        # Queues
+        self._capture_queue: queue.Queue[Optional[AudioChunk]] = queue.Queue(
+            maxsize=CAPTURE_QUEUE_SIZE
+        )
+        self._utterance_queue: queue.Queue[Optional[Utterance]] = queue.Queue(
+            maxsize=UTTERANCE_QUEUE_SIZE
+        )
+
+        # Control
+        self._running = False
+        self._threads: list[threading.Thread] = []
+        self._stop_event = threading.Event()
+
+        # Metrics
+        self.metrics = PipelineMetrics()
+
+    def _default_error_handler(self, e: Exception) -> None:
+        """Default error handler that prints to console."""
+        print(f"Pipeline error: {e}")
+
+    def start(self) -> None:
+        """Start all pipeline threads."""
+        if self._running:
+            raise RuntimeError("Pipeline already running")
+
+        self._running = True
+        self._stop_event.clear()
+
+        self._threads = [
+            threading.Thread(
+                target=self._capture_loop,
+                name="sr-pipeline-capture",
+                daemon=True
+            ),
+            threading.Thread(
+                target=self._detect_loop,
+                name="sr-pipeline-detect",
+                daemon=True
+            ),
+            threading.Thread(
+                target=self._transcribe_loop,
+                name="sr-pipeline-transcribe",
+                daemon=True
+            ),
+        ]
+
+        for t in self._threads:
+            t.start()
+
+    def stop(self, timeout: float = 2.0) -> None:
+        """Stop all pipeline threads gracefully."""
+        if not self._running:
+            return
+
+        self._running = False
+        self._stop_event.set()
+
+        # Send poison pills to unblock queue.get()
+        try:
+            self._capture_queue.put_nowait(None)
+        except queue.Full:
+            pass
+
+        try:
+            self._utterance_queue.put_nowait(None)
+        except queue.Full:
+            pass
+
+        # Wait for threads
+        for t in self._threads:
+            t.join(timeout=timeout)
+
+        self._threads.clear()
+
+    def wait(self) -> None:
+        """Block until stop() is called or threads exit."""
+        while self._running and any(t.is_alive() for t in self._threads):
+            time.sleep(0.1)
+
+    def _capture_loop(self) -> None:
+        """Capture thread - implemented in next step."""
+        pass
+
+    def _detect_loop(self) -> None:
+        """Detection thread - implemented in next step."""
+        pass
+
+    def _transcribe_loop(self) -> None:
+        """Transcription thread - implemented in next step."""
+        pass
