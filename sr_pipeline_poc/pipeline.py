@@ -138,8 +138,43 @@ class AudioPipeline:
             time.sleep(0.1)
 
     def _capture_loop(self) -> None:
-        """Capture thread - implemented in next step."""
-        pass
+        """
+        Dedicated capture thread.
+
+        Reads audio chunks at fixed intervals, never blocks on downstream.
+        CRITICAL: Uses put_nowait() to never block - drops frames if queue full.
+        """
+        chunk_samples = int(self.source.SAMPLE_RATE * FRAME_DURATION_MS / 1000)
+
+        with self.source as s:
+            while self._running:
+                try:
+                    # Read audio - releases GIL during device read
+                    data = s.stream.read(chunk_samples)
+
+                    chunk = AudioChunk(
+                        data=data,
+                        timestamp=time.monotonic(),
+                        sample_rate=s.SAMPLE_RATE,
+                        sample_width=s.SAMPLE_WIDTH,
+                    )
+
+                    # Non-blocking put - NEVER block capture thread
+                    try:
+                        self._capture_queue.put_nowait(chunk)
+                        self.metrics.chunks_captured += 1
+                    except queue.Full:
+                        # Drop frame and track metric
+                        self.metrics.chunks_dropped += 1
+
+                except OSError as e:
+                    # Audio device error - fatal
+                    if self._running:
+                        self.on_error(e)
+                    break
+                except Exception as e:
+                    if self._running:
+                        self.on_error(e)
 
     def _detect_loop(self) -> None:
         """Detection thread - implemented in next step."""
