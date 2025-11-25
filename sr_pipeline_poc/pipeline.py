@@ -177,8 +177,109 @@ class AudioPipeline:
                         self.on_error(e)
 
     def _detect_loop(self) -> None:
-        """Detection thread - implemented in next step."""
-        pass
+        """
+        VAD and utterance segmentation thread.
+
+        Implements simplified 2-state FSM:
+        - IDLE: Wait for speech, maintain padding buffer
+        - SPEAKING: Accumulate audio, emit after silence timeout
+        """
+        # State: "idle" or "speaking"
+        state = "idle"
+
+        # Ring buffer for speech padding
+        padding_frames = int(SPEECH_PADDING * 1000 / FRAME_DURATION_MS)
+        padding_buffer: collections.deque[AudioChunk] = collections.deque(
+            maxlen=max(1, padding_frames)
+        )
+
+        # Utterance accumulator
+        utterance_chunks: list[AudioChunk] = []
+        speech_start_time: Optional[float] = None
+        last_speech_time: Optional[float] = None
+
+        while self._running:
+            try:
+                chunk = self._capture_queue.get(timeout=0.1)
+            except queue.Empty:
+                continue
+
+            if chunk is None:  # Poison pill
+                break
+
+            # Run VAD
+            try:
+                vad_result = self.vad.process(chunk)
+            except Exception as e:
+                self.on_error(e)
+                continue
+
+            is_speech = vad_result.is_speech
+            now = chunk.timestamp
+
+            # FSM transitions
+            if state == "idle":
+                padding_buffer.append(chunk)
+                if is_speech:
+                    # Start speaking
+                    state = "speaking"
+                    speech_start_time = now
+                    last_speech_time = now
+                    utterance_chunks = list(padding_buffer)
+
+            elif state == "speaking":
+                utterance_chunks.append(chunk)
+                if is_speech:
+                    last_speech_time = now
+
+                # Check if we should emit utterance
+                silence_duration = now - last_speech_time
+                speech_duration = now - speech_start_time
+
+                if silence_duration >= SILENCE_TIMEOUT:
+                    # Silence timeout - emit utterance
+                    self._emit_utterance(utterance_chunks, speech_start_time, now)
+                    state = "idle"
+                    utterance_chunks = []
+                    padding_buffer.clear()
+                    self.vad.reset()
+                elif speech_duration >= MAX_SPEECH_DURATION:
+                    # Max duration - force emit
+                    self._emit_utterance(utterance_chunks, speech_start_time, now)
+                    state = "idle"
+                    utterance_chunks = []
+                    padding_buffer.clear()
+                    self.vad.reset()
+
+    def _emit_utterance(
+        self,
+        chunks: list[AudioChunk],
+        start: float,
+        end: float
+    ) -> None:
+        """Package chunks as Utterance and queue for transcription."""
+        if not chunks:
+            return
+
+        # Combine chunks into single audio blob
+        audio_bytes = b"".join(c.data for c in chunks)
+        audio_data = sr.AudioData(
+            audio_bytes,
+            chunks[0].sample_rate,
+            chunks[0].sample_width,
+        )
+
+        utterance = Utterance(
+            audio=audio_data,
+            start_time=start,
+            end_time=end,
+        )
+
+        try:
+            self._utterance_queue.put_nowait(utterance)
+            self.metrics.utterances_detected += 1
+        except queue.Full:
+            print(f"Warning: Utterance queue full, dropping {utterance.duration:.1f}s utterance")
 
     def _transcribe_loop(self) -> None:
         """Transcription thread - implemented in next step."""
