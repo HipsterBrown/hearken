@@ -192,6 +192,37 @@ Always expose metrics through `PipelineMetrics`:
 - `webrtcvad` >= 2.0.10 (production-quality VAD, recommended)
 - `scipy` >= 1.7 (high-quality resampling via `signal.resample`)
 
+## POC Status
+
+A minimal proof of concept is implemented in `sr_pipeline_poc/` to validate the three-thread architecture.
+
+**Running the POC:**
+```bash
+# Basic demo
+python -m sr_pipeline_poc.demo
+
+# Stress test (2s artificial delay per transcription)
+python -m sr_pipeline_poc.stress_test
+```
+
+**Success criteria:**
+- Drop rate < 1% during normal speech
+- Drop rate < 1% even with artificial 2s transcription delay
+- Works on both MacOS and Raspberry Pi 4
+
+**What's included in POC:**
+- EnergyVAD (no external dependencies)
+- Simplified 2-state FSM (IDLE ↔ SPEAKING)
+- Hardcoded configuration
+- Google API transcription only
+
+**What's NOT in POC (for full implementation):**
+- WebRTC VAD
+- Full 4-state FSM (SPEECH_STARTING, TRAILING_SILENCE states)
+- Sample rate conversion
+- Configuration system
+- Unit tests
+
 ## Design Document
 
 The complete architectural design, including motivation, alternatives considered, and implementation phases, is in `docs/plans/sr-pipeline-design-document.md`. Refer to it for:
