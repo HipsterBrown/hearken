@@ -4,4 +4,8 @@ version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "SpeechRecognition>=3.8",
+    "PyAudio>=0.2.11",
+    "numpy>=1.20",
+]
