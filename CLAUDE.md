@@ -4,43 +4,42 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-`sr_pipeline` is a userland wrapper for Python's `speech_recognition` library that fixes architectural limitations causing dropped audio frames during transcription. The core innovation is decoupling audio capture, voice activity detection (VAD), and transcription into independent threads with queue-based communication.
+`hearken` is a robust speech recognition pipeline for Python that prevents audio drops during transcription. The core innovation is decoupling audio capture, voice activity detection (VAD), and transcription into independent threads with queue-based communication.
 
 ## Core Architecture
 
 The pipeline consists of three independent threads:
 
 1. **Capture Thread**: Continuously reads 30ms audio chunks from microphone, never blocks on downstream processing
-2. **VAD Thread**: Runs voice activity detection and finite state machine (FSM) to segment continuous audio into discrete utterances
-3. **Transcribe Thread**: Consumes utterances and calls recognition backends (Google, etc.)
+2. **Detect Thread**: Runs voice activity detection and finite state machine (FSM) to segment continuous audio into discrete speech segments
+3. **Transcribe Thread**: Consumes segments and calls recognition backends (optional, passive mode only)
 
-**Critical Design Principle**: The capture thread must NEVER block. Queues use explicit backpressure - when full, drop data with metrics tracking rather than blocking upstream.
+**Critical Design Principle**: The capture thread must NEVER block. Queues use explicit backpressure - when full, drop data with logging rather than blocking upstream.
 
 ### Key Components
 
-- **Data Classes** (`types.py`): `AudioChunk`, `Utterance`, `TranscriptResult`, `PipelineMetrics`
-- **VAD Interface** (`vad/base.py`): Abstract base class for pluggable voice activity detectors
-- **VAD Implementations**: `EnergyVAD` (baseline), `WebRTCVAD` (production quality)
-- **Pipeline** (`pipeline.py`): `AudioPipeline` orchestrates the three-thread architecture
-- **Detector FSM** (`detector.py`): States: IDLE → SPEECH_STARTING → SPEAKING → TRAILING_SILENCE
+- **Listener** (`listener.py`): Main pipeline class orchestrating the three-thread architecture
+- **Data Types** (`types.py`): `AudioChunk`, `SpeechSegment`, `VADResult`, `DetectorConfig`, `DetectorState`
+- **Interfaces** (`interfaces.py`): `AudioSource`, `Transcriber`, `VAD` abstract base classes
+- **SpeechDetector** (`detector.py`): 4-state FSM for utterance segmentation
+- **VAD Implementations**: `EnergyVAD` (baseline), WebRTCVAD (future)
+- **Adapters** (`adapters/sr.py`): speech_recognition library integration
 
 ### Module Structure
 
 ```
-sr_pipeline/
+hearken/
 ├── __init__.py           # Public API exports
-├── pipeline.py           # AudioPipeline class
-├── types.py              # AudioChunk, Utterance, TranscriptResult, etc.
+├── listener.py           # Listener class (main pipeline)
+├── types.py              # Core data types
+├── interfaces.py         # Abstract interfaces
+├── detector.py           # SpeechDetector FSM
 ├── vad/
-│   ├── __init__.py       # VAD interface, factory function
-│   ├── base.py           # VAD abstract base class
-│   ├── energy.py         # EnergyVAD implementation
-│   └── webrtc.py         # WebRTCVAD implementation
-├── detector.py           # DetectorState FSM, DetectorConfig
-├── audio/
 │   ├── __init__.py
-│   └── resample.py       # Sample rate conversion utilities
-└── compat.py             # listen_in_background_improved() wrapper
+│   └── energy.py         # EnergyVAD implementation
+└── adapters/
+    ├── __init__.py
+    └── sr.py             # speech_recognition adapters
 ```
 
 ## Development Commands
@@ -52,6 +51,9 @@ This project uses uv for dependency management (Python 3.11+).
 # Install dependencies
 uv sync
 
+# Install with all extras (including speech_recognition)
+uv sync --all-extras
+
 # Activate virtual environment
 source .venv/bin/activate
 ```
@@ -59,77 +61,67 @@ source .venv/bin/activate
 ### Running Tests
 ```bash
 # Run all tests
-pytest
-
-# Run specific test file
-pytest tests/test_pipeline.py
+uv run pytest
 
 # Run with coverage
-pytest --cov=sr_pipeline --cov-report=term-missing
+uv run pytest --cov=hearken --cov-report=term-missing
 
-# Run single test function
-pytest tests/test_vad.py::test_webrtc_vad_basic
+# Run specific test file
+uv run pytest tests/test_listener.py
+
+# Verbose output
+uv run pytest -v
 ```
 
 ### Code Quality
 ```bash
 # Format code
-black sr_pipeline/ tests/
+uv run black hearken/ tests/ examples/
 
 # Type checking
-mypy sr_pipeline/
+uv run mypy hearken/
 
 # Linting
-ruff check sr_pipeline/ tests/
+uv run ruff check hearken/ tests/ examples/
 ```
 
 ### Running Examples
 ```bash
-# Basic pipeline example
-python examples/basic_usage.py
+# Basic passive mode example
+uv run python examples/basic_usage.py
 
-# Google Cloud Speech-to-Text
-python examples/google_cloud.py
-
-# Drop-in replacement demo
-python examples/compat_demo.py
+# Active mode example
+uv run python examples/active_mode.py
 ```
 
-## Technical Constraints
+## Architecture Details
 
-### WebRTC VAD Requirements
+### Three-Thread Pipeline
 
-The `WebRTCVAD` implementation has strict requirements inherited from the underlying C library:
+```
+Microphone → [Capture Thread] → Queue → [Detect Thread] → Queue → [Transcribe Thread] → Callback
+                   ↓                          ↓                         ↓
+            AudioChunk (30ms)      SpeechSegment (complete)    Text transcription
+```
 
-- **Sample rates**: Must be exactly 8000, 16000, 32000, or 48000 Hz
-- **Frame durations**: Must be exactly 10, 20, or 30 ms
-- **Audio format**: 16-bit mono PCM only
+### Two Modes of Operation
 
-When implementing audio capture or resampling, validate these constraints early. The capture thread should check VAD requirements via `vad.required_sample_rate` and `vad.required_frame_duration_ms`.
+1. **Passive Mode** (callbacks):
+   - Provide `on_speech` and/or `on_transcript` callbacks
+   - Listener automatically processes audio and fires callbacks
+   - Non-blocking, event-driven
 
-### GIL Considerations
-
-- **PyAudio releases the GIL** during blocking device reads - capture thread won't block other threads
-- **Network I/O releases the GIL** during recognition API calls - transcription thread won't block capture
-- **CPU-bound VAD** (like future Silero implementation) would require `multiprocessing` to avoid GIL contention
+2. **Active Mode** (polling):
+   - Call `wait_for_speech()` to block until speech detected
+   - Manually transcribe returned segments
+   - Fine-grained control over processing
 
 ### Queue Backpressure Strategy
 
 | Queue | Full Behavior | Rationale |
 |-------|---------------|-----------|
 | `capture_queue` | Drop newest chunk | Capture must never block; old audio more valuable during overflow |
-| `utterance_queue` | Drop with warning | Transcription backlog indicates systemic issue |
-
-## Implementation Patterns
-
-### Adding a New VAD Implementation
-
-1. Subclass `VAD` from `vad/base.py`
-2. Implement `process(chunk: AudioChunk) -> VADResult`
-3. Implement `reset()` for clearing state between utterances
-4. Define `required_sample_rate` and `required_frame_duration_ms` properties
-5. Add to factory function in `vad/__init__.py`
-6. Add unit tests with mock audio data
+| `segment_queue` | Drop with warning | Transcription backlog indicates systemic issue |
 
 ### FSM State Transitions
 
@@ -139,95 +131,69 @@ The detector FSM prevents false triggers from transient noise:
 - **SPEECH_STARTING → SPEAKING**: Duration exceeds `min_speech_duration` (default 250ms)
 - **SPEECH_STARTING → IDLE**: Silence exceeds `silence_timeout` before min duration (false start)
 - **SPEAKING → TRAILING_SILENCE**: Speech stops
-- **TRAILING_SILENCE → SPEAKING**: Speech resumes
-- **TRAILING_SILENCE → IDLE**: Silence exceeds `silence_timeout` (emit utterance)
-
-### Metrics and Observability
-
-Always expose metrics through `PipelineMetrics`:
-- `chunks_captured` / `chunks_dropped`: Monitor capture health
-- `drop_rate` property: Percentage of dropped chunks (should be <1%)
-- `utterances_detected` / `utterances_transcribed`: Monitor pipeline flow
-- `transcription_errors`: Track API failures
+- **TRAILING_SILENCE → SPEAKING**: Speech resumes (handles pauses)
+- **TRAILING_SILENCE → IDLE**: Silence exceeds `silence_timeout` (emit segment)
 
 ## Testing Strategy
 
 ### Unit Tests
-- Mock `AudioChunk` data with known energy profiles
+- Mock audio sources with controlled energy profiles
 - Test VAD implementations with synthetic audio (silence, speech, noise)
 - Test FSM transitions with controlled input sequences
 - Verify queue backpressure behavior
 
 ### Integration Tests
-- Use real `sr.Microphone()` with test audio playback
-- Verify end-to-end pipeline with known utterances
-- Test sample rate conversion accuracy
-- Measure dropped frame rates under load
+- End-to-end pipeline tests with mock audio
+- Verify segment detection and emission
+- Test both active and passive modes
+- Thread lifecycle and cleanup
 
-### Performance Benchmarks
-- Target platform: Raspberry Pi 4 (4GB)
-- Metric: <1% dropped frames during 60s continuous speech
-- Compare against baseline `listen_in_background()` (10-30% drops expected)
+### Test Execution
+```bash
+# All tests
+uv run pytest
+
+# Specific module
+uv run pytest tests/test_listener.py
+
+# With coverage
+uv run pytest --cov=hearken --cov-report=html
+```
 
 ## Common Pitfalls
 
-1. **Blocking the capture thread**: Never call slow operations in `_capture_loop()`. Queue puts must be non-blocking.
+1. **Blocking the capture thread**: Never call slow operations in capture loop. Queue puts must be non-blocking.
 
-2. **Ignoring VAD constraints**: WebRTC VAD will raise exceptions if sample rate or frame size is wrong. Validate early in `start()`.
+2. **Ignoring VAD constraints**: WebRTC VAD (future) requires specific sample rates and frame sizes. Validate early.
 
 3. **Forgetting padding buffer**: Speech detection is reactive - without pre-roll padding, you'll miss the first 300ms of utterances.
 
-4. **Not resetting VAD state**: Some VADs maintain internal state. Call `vad.reset()` when starting a new utterance.
+4. **Not resetting VAD state**: Call `vad.reset()` when starting a new utterance (done automatically in detector).
 
-5. **Assuming numpy dtypes**: Audio data is bytes. Convert to `np.int16` explicitly before processing.
+5. **Assuming numpy dtypes**: Convert `numpy.bool_` and `numpy.float_` to Python types when needed.
 
 ## Dependencies
 
 ### Required
-- `speech_recognition` >= 3.8 (recognition backends, Microphone abstraction)
-- `pyaudio` >= 0.2.11 (audio capture, installed via speech_recognition)
 - `numpy` >= 1.20 (audio processing, energy calculation)
 
 ### Optional
-- `webrtcvad` >= 2.0.10 (production-quality VAD, recommended)
-- `scipy` >= 1.7 (high-quality resampling via `signal.resample`)
+- `SpeechRecognition` >= 3.8 (recognition backends via adapters)
+- `PyAudio` >= 0.2.11 (audio capture, installed via speech_recognition)
 
-## POC Status
+Install with: `pip install hearken[sr]` for speech_recognition support
 
-A minimal proof of concept is implemented in `sr_pipeline_poc/` to validate the three-thread architecture.
+## Version
 
-**Running the POC:**
-```bash
-# Basic demo
-python -m sr_pipeline_poc.demo
+Current version: **0.1.0** (MVP Release)
 
-# Stress test (2s artificial delay per transcription)
-python -m sr_pipeline_poc.stress_test
-```
+- 3-thread architecture with clean abstractions
+- EnergyVAD implementation
+- 4-state FSM detector
+- Active and passive modes
+- speech_recognition adapters
 
-**Success criteria:**
-- Drop rate < 1% during normal speech
-- Drop rate < 1% even with artificial 2s transcription delay
-- Works on both MacOS and Raspberry Pi 4
-
-**What's included in POC:**
-- EnergyVAD (no external dependencies)
-- Simplified 2-state FSM (IDLE ↔ SPEAKING)
-- Hardcoded configuration
-- Google API transcription only
-
-**What's NOT in POC (for full implementation):**
-- WebRTC VAD
-- Full 4-state FSM (SPEECH_STARTING, TRAILING_SILENCE states)
-- Sample rate conversion
-- Configuration system
-- Unit tests
-
-## Design Document
-
-The complete architectural design, including motivation, alternatives considered, and implementation phases, is in `docs/plans/sr-pipeline-design-document.md`. Refer to it for:
-- Problem analysis and root cause (why `listen_in_background()` drops frames)
-- Detailed pipeline data flow diagrams
-- Complete code examples for all components
-- Performance comparison methodology
-- Future work (Silero VAD, streaming recognition)
+Roadmap:
+- v0.2: WebRTC VAD support
+- v0.3: Async transcriber support
+- v0.4: Silero VAD (neural network)
