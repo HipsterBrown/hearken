@@ -9,14 +9,21 @@ Only available when SpeechRecognition is installed (hearken[sr]).
 
 try:
     import speech_recognition as sr
+
     SR_AVAILABLE = True
 except ImportError:
     SR_AVAILABLE = False
+
     # Define stubs so module can still be imported
     class sr:
-        class Microphone: pass
-        class Recognizer: pass
-        class AudioData: pass
+        class Microphone:
+            pass
+
+        class Recognizer:
+            pass
+
+        class AudioData:
+            pass
 
 
 from ..interfaces import AudioSource, Transcriber
@@ -37,15 +44,14 @@ class SpeechRecognitionSource(AudioSource):
         listener = Listener(source=source, ...)
     """
 
-    def __init__(self, microphone: 'sr.Microphone'):
+    def __init__(self, microphone: "sr.Microphone"):
         """
         Args:
             microphone: speech_recognition Microphone instance
         """
         if not SR_AVAILABLE:
             raise ImportError(
-                "SpeechRecognition not installed. "
-                "Install with: pip install hearken[sr]"
+                "SpeechRecognition not installed. " "Install with: pip install hearken[sr]"
             )
 
         self.microphone = microphone
@@ -63,7 +69,7 @@ class SpeechRecognitionSource(AudioSource):
 
     def read(self, num_samples: int) -> bytes:
         """Read audio samples from microphone."""
-        return self.microphone.stream.read(num_samples, exception_on_overflow=False)
+        return self.microphone.stream.read(num_samples)
 
     @property
     def sample_rate(self) -> int:
@@ -100,12 +106,7 @@ class SRTranscriber(Transcriber):
         listener = Listener(source=..., transcriber=transcriber)
     """
 
-    def __init__(
-        self,
-        recognizer: 'sr.Recognizer',
-        method: str = 'recognize_google',
-        **kwargs
-    ):
+    def __init__(self, recognizer: "sr.Recognizer", method: str = "recognize_google", **kwargs):
         """
         Args:
             recognizer: speech_recognition Recognizer instance
@@ -114,8 +115,7 @@ class SRTranscriber(Transcriber):
         """
         if not SR_AVAILABLE:
             raise ImportError(
-                "SpeechRecognition not installed. "
-                "Install with: pip install hearken[sr]"
+                "SpeechRecognition not installed. " "Install with: pip install hearken[sr]"
             )
 
         self.recognizer = recognizer
@@ -142,11 +142,7 @@ class SRTranscriber(Transcriber):
             Exception: If transcription fails (network error, etc.)
         """
         # Convert SpeechSegment to sr.AudioData
-        audio_data = sr.AudioData(
-            segment.audio_data,
-            segment.sample_rate,
-            segment.sample_width
-        )
+        audio_data = sr.AudioData(segment.audio_data, segment.sample_rate, segment.sample_width)
 
         # Call recognition method
         # Note: recognize_* methods raise sr.UnknownValueError if no speech detected
