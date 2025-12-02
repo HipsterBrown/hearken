@@ -5,7 +5,7 @@ Decouples audio capture, voice activity detection, and transcription
 into independent threads to prevent audio drops during processing.
 """
 
-__version__ = "0.1.1"
+__version__ = "0.1.2"
 
 # Core components
 from .listener import Listener
