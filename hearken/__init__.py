@@ -5,7 +5,7 @@ Decouples audio capture, voice activity detection, and transcription
 into independent threads to prevent audio drops during processing.
 """
 
-__version__ = "0.1.3"
+__version__ = "0.2.0"
 
 # Core components
 from .listener import Listener
@@ -25,6 +25,7 @@ from .vad.energy import EnergyVAD
 
 try:
     from .vad.webrtc import WebRTCVAD
+
     _webrtc_available = True
 except ImportError:
     _webrtc_available = False
