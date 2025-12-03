@@ -23,6 +23,13 @@ from .interfaces import AudioSource, Transcriber, VAD
 # VAD implementations
 from .vad.energy import EnergyVAD
 
+try:
+    from .vad.webrtc import WebRTCVAD
+    _webrtc_available = True
+except ImportError:
+    _webrtc_available = False
+
+# Build __all__ dynamically
 __all__ = [
     # Main class
     "Listener",
@@ -39,3 +46,6 @@ __all__ = [
     # VAD implementations
     "EnergyVAD",
 ]
+
+if _webrtc_available:
+    __all__.append("WebRTCVAD")
