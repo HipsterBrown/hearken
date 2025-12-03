@@ -57,7 +57,7 @@ class WebRTCVAD(VAD):
 
     def process(self, chunk: AudioChunk) -> VADResult:
         """Process audio chunk and return speech detection result."""
-        # Validate sample rate on first call
+        # Validate sample rate and frame duration on first call
         if not self._validated:
             if chunk.sample_rate not in self.SUPPORTED_SAMPLE_RATES:
                 raise ValueError(
@@ -65,6 +65,18 @@ class WebRTCVAD(VAD):
                     f"Got {chunk.sample_rate} Hz. "
                     f"Configure your AudioSource with a supported sample rate."
                 )
+
+            # Calculate frame duration from chunk
+            num_samples = len(chunk.data) // chunk.sample_width
+            duration_ms = int((num_samples / chunk.sample_rate) * 1000)
+
+            if duration_ms not in self.SUPPORTED_FRAME_DURATIONS_MS:
+                raise ValueError(
+                    f"WebRTC VAD requires frame duration of {self.SUPPORTED_FRAME_DURATIONS_MS} ms. "
+                    f"Got {duration_ms} ms. "
+                    f"Configure your AudioSource with a supported frame duration."
+                )
+
             self._sample_rate = chunk.sample_rate
             self._validated = True
 

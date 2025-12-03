@@ -73,3 +73,22 @@ def test_webrtc_vad_unsupported_sample_rate():
 
     with pytest.raises(ValueError, match="WebRTC VAD requires sample rate"):
         vad.process(chunk)
+
+
+def test_webrtc_vad_supported_frame_durations():
+    """Test WebRTC VAD accepts all supported frame durations."""
+    vad = WebRTCVAD()
+
+    for duration_ms in [10, 20, 30]:
+        chunk = create_test_chunk(sample_rate=16000, duration_ms=duration_ms)
+        result = vad.process(chunk)  # Should not raise
+        assert result is not None
+
+
+def test_webrtc_vad_unsupported_frame_duration():
+    """Test WebRTC VAD rejects unsupported frame duration."""
+    vad = WebRTCVAD()
+    chunk = create_test_chunk(sample_rate=16000, duration_ms=25)  # Not 10/20/30
+
+    with pytest.raises(ValueError, match="WebRTC VAD requires frame duration"):
+        vad.process(chunk)
