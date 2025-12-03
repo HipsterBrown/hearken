@@ -92,3 +92,70 @@ def test_webrtc_vad_unsupported_frame_duration():
 
     with pytest.raises(ValueError, match="WebRTC VAD requires frame duration"):
         vad.process(chunk)
+
+
+def create_silence_chunk(sample_rate: int = 16000, duration_ms: int = 30) -> AudioChunk:
+    """Create a chunk of silence (zeros)."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    samples = np.zeros(num_samples, dtype=np.int16)
+
+    return AudioChunk(
+        data=samples.tobytes(),
+        timestamp=time.monotonic(),
+        sample_rate=sample_rate,
+        sample_width=2,
+    )
+
+
+def create_speech_chunk(sample_rate: int = 16000, duration_ms: int = 30) -> AudioChunk:
+    """Create a chunk with high-energy audio (simulated speech)."""
+    num_samples = int(sample_rate * duration_ms / 1000)
+    # Generate sine wave with high amplitude
+    t = np.linspace(0, duration_ms / 1000, num_samples)
+    frequency = 300  # Human voice range
+    samples = (5000 * np.sin(2 * np.pi * frequency * t)).astype(np.int16)
+
+    return AudioChunk(
+        data=samples.tobytes(),
+        timestamp=time.monotonic(),
+        sample_rate=sample_rate,
+        sample_width=2,
+    )
+
+
+def test_webrtc_vad_detects_silence():
+    """Test WebRTC VAD detects silence correctly."""
+    vad = WebRTCVAD(aggressiveness=1)
+    chunk = create_silence_chunk()
+
+    result = vad.process(chunk)
+
+    assert result.is_speech is False
+    assert result.confidence == 0.0
+
+
+def test_webrtc_vad_detects_speech():
+    """Test WebRTC VAD detects speech-like audio."""
+    vad = WebRTCVAD(aggressiveness=1)
+    chunk = create_speech_chunk()
+
+    result = vad.process(chunk)
+
+    assert result.is_speech is True
+    assert result.confidence == 1.0
+
+
+def test_webrtc_vad_confidence_binary():
+    """Test WebRTC VAD returns binary confidence (0.0 or 1.0)."""
+    vad = WebRTCVAD()
+
+    # Test multiple chunks
+    for _ in range(5):
+        chunk = create_silence_chunk()
+        result = vad.process(chunk)
+        assert result.confidence in [0.0, 1.0]
+
+    for _ in range(5):
+        chunk = create_speech_chunk()
+        result = vad.process(chunk)
+        assert result.confidence in [0.0, 1.0]
