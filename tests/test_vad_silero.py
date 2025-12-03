@@ -1,6 +1,8 @@
 """Tests for Silero VAD implementation."""
 
+import os
 import pytest
+from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 from hearken.vad.silero import SileroVAD
 
@@ -50,3 +52,39 @@ def test_silero_vad_boundary_thresholds():
 
         vad_max = SileroVAD(threshold=1.0)
         assert vad_max._threshold == 1.0
+
+
+def test_silero_vad_model_path_parameter():
+    """Test model path from constructor parameter (highest priority)."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+        vad = SileroVAD(model_path="/custom/path/model.onnx")
+        assert vad._model_path == "/custom/path/model.onnx"
+
+
+def test_silero_vad_model_path_env_var():
+    """Test model path from environment variable."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'), \
+         patch.dict(os.environ, {"HEARKEN_SILERO_MODEL_PATH": "/env/path/model.onnx"}):
+        vad = SileroVAD()
+        assert vad._model_path == "/env/path/model.onnx"
+
+
+def test_silero_vad_model_path_default():
+    """Test default model path."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'), \
+         patch.dict(os.environ, {}, clear=True):
+        vad = SileroVAD()
+        expected = str(Path.home() / ".cache" / "hearken" / "silero_vad_v5.onnx")
+        assert vad._model_path == expected
+
+
+def test_silero_vad_model_path_parameter_overrides_env():
+    """Test parameter takes precedence over environment variable."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'), \
+         patch.dict(os.environ, {"HEARKEN_SILERO_MODEL_PATH": "/env/path/model.onnx"}):
+        vad = SileroVAD(model_path="/param/path/model.onnx")
+        assert vad._model_path == "/param/path/model.onnx"
