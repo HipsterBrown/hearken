@@ -17,8 +17,9 @@ class MockAudioSource(AudioSource):
 
     def read(self, num_samples: int) -> bytes:
         import time
+
         time.sleep(0.001)  # Simulate device latency
-        return b'\x00' * num_samples * 2
+        return b"\x00" * num_samples * 2
 
     @property
     def sample_rate(self) -> int:
@@ -35,7 +36,7 @@ class MockTranscriber(Transcriber):
 
 
 class SpeechAudioSource(AudioSource):
-    """Mock source that generates speech-like audio."""
+    """Mock source that generates speech-like audio with silence periods."""
 
     def __init__(self):
         self.is_open = False
@@ -43,16 +44,30 @@ class SpeechAudioSource(AudioSource):
 
     def open(self) -> None:
         self.is_open = True
+        self.frame_count = 0  # Reset counter on open to ensure consistent start
 
     def close(self) -> None:
         self.is_open = False
 
     def read(self, num_samples: int) -> bytes:
         import time
+
         # Simulate real-time audio (30ms frame = 0.03s)
         time.sleep(0.001)  # Small sleep to avoid flooding
-        # Generate high-energy audio (speech)
-        samples = np.random.randint(-5000, 5000, size=num_samples, dtype=np.int16)
+
+        # Generate pattern: 12 frames of speech, then 6 frames of silence
+        # This allows the FSM to reliably emit segments (needs silence to trigger)
+        # Pattern chosen to be longer than min_speech_duration + silence_timeout
+        cycle_length = 18
+        speech_frames = 12  # 360ms of speech
+
+        if (self.frame_count % cycle_length) < speech_frames:
+            # Speech frames (high energy)
+            samples = np.random.randint(-5000, 5000, size=num_samples, dtype=np.int16)
+        else:
+            # Silence frames (low energy)
+            samples = np.random.randint(-100, 100, size=num_samples, dtype=np.int16)
+
         self.frame_count += 1
         return samples.tobytes()
 
@@ -99,6 +114,7 @@ def test_listener_requires_transcriber_for_on_transcript():
 def test_listener_start_stop():
     """Test Listener start and stop lifecycle."""
     import time
+
     source = MockAudioSource()
     listener = Listener(source=source)
 
@@ -114,6 +130,7 @@ def test_listener_start_stop():
 def test_listener_capture_thread():
     """Test capture thread reads audio chunks."""
     import time
+
     source = MockAudioSource()
     listener = Listener(source=source)
 
@@ -152,6 +169,7 @@ def test_listener_detect_thread():
 
     # Check that segments were detected and queued
     queue_size = listener._segment_queue.qsize()
+    print(f"Detection queue size: {queue_size}")
     assert queue_size > 0, f"Expected segments in queue but got {queue_size}"
 
 
@@ -161,18 +179,30 @@ def test_listener_wait_for_speech():
 
     source = SpeechAudioSource()
     config = DetectorConfig(
-        min_speech_duration=0.06,  # Shorter to detect faster
-        silence_timeout=0.10,  # Shorter silence window
+        min_speech_duration=0.09,  # 3 frames @ 30ms
+        silence_timeout=0.12,  # 4 frames @ 30ms
     )
 
+    # Use same config as test_listener_detect_thread for consistency
     listener = Listener(source=source, detector_config=config)
     listener.start()
 
-    # Wait for speech (with generous timeout)
-    segment = listener.wait_for_speech(timeout=5.0)
+    # Give the system a moment to start processing
+    time.sleep(0.1)
+
+    # Wait for speech with generous timeout
+    # Pattern: 12 frames speech (360ms) + 6 frames silence (180ms) = 540ms cycle
+    start = time.time()
+    segment = listener.wait_for_speech(timeout=3.0)
+    elapsed = time.time() - start
+
+    print(f"wait_for_speech returned after {elapsed:.2f}s")
+    print(f"Segment: {segment}")
+    if segment:
+        print(f"Segment duration: {segment.duration:.3f}s")
 
     listener.stop()
 
     # Segment should be detected
-    assert segment is not None, "Expected segment but got None"
+    assert segment is not None, f"Expected segment but got None (waited {elapsed:.2f}s)"
     assert segment.duration > 0

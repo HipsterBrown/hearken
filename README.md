@@ -13,11 +13,17 @@ Hearken decouples capture, voice activity detection (VAD), and transcription int
 ## Installation
 
 ```bash
-# Core package
+# Basic installation (includes EnergyVAD)
 pip install hearken
 
-# With speech_recognition adapters (recommended for getting started)
+# With speech_recognition support
 pip install hearken[sr]
+
+# With WebRTC VAD support
+pip install hearken[webrtc]
+
+# All optional dependencies
+pip install hearken[all]
 ```
 
 ## Quick Start
@@ -52,10 +58,17 @@ except KeyboardInterrupt:
 ## Features
 
 - **No dropped frames**: Capture thread never blocks on downstream processing
-- **Flexible VAD**: Pluggable voice activity detection (Energy-based included, WebRTC coming soon)
 - **Two modes**: Passive (callbacks) and active (`wait_for_speech()`)
 - **Clean abstractions**: Bring your own audio source and transcriber
 - **Production-ready FSM**: Robust 4-state detector filters false starts and handles pauses
+
+### Voice Activity Detection (VAD)
+
+- **EnergyVAD**: Simple energy-based detection with dynamic threshold calibration
+- **WebRTCVAD**: Google WebRTC VAD for improved accuracy in noisy environments
+  - Requires sample rates: 8000, 16000, 32000, or 48000 Hz
+  - Configurable aggressiveness (0-3)
+  - Install with: `pip install hearken[webrtc]`
 
 ## Architecture
 
@@ -119,8 +132,8 @@ ruff check hearken/ tests/
 
 ## Roadmap
 
-- v0.1: EnergyVAD, core pipeline ✓
-- v0.2: WebRTC VAD support
+- ✅ v0.1: EnergyVAD, core pipeline
+- ✅ v0.2: WebRTC VAD support
 - v0.3: Async transcriber support
 - v0.4: Silero VAD (neural network)
 

@@ -33,6 +33,9 @@ sr = [
     "SpeechRecognition>=3.8",
     "PyAudio>=0.2.11",
 ]
+webrtc = [
+    "webrtcvad-wheels>=2.0.10",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -41,7 +44,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 all = [
-    "hearken[sr]",
+    "hearken[sr,webrtc]",
 ]
 
 [project.urls]
