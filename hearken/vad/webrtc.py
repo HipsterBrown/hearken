@@ -92,6 +92,9 @@ class WebRTCVAD(VAD):
         """Reset internal state between utterances."""
         # Recreate VAD instance for clean state
         self._vad = webrtcvad.Vad(self._aggressiveness)
+        # Clear validation state to allow revalidation
+        self._validated = False
+        self._sample_rate = None
 
     @property
     def required_sample_rate(self) -> Optional[int]:

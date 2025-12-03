@@ -159,3 +159,40 @@ def test_webrtc_vad_confidence_binary():
         chunk = create_speech_chunk()
         result = vad.process(chunk)
         assert result.confidence in [0.0, 1.0]
+
+
+def test_webrtc_vad_reset():
+    """Test WebRTC VAD reset recreates internal VAD instance."""
+    vad = WebRTCVAD(aggressiveness=2)
+
+    # Process a chunk
+    chunk = create_speech_chunk()
+    result1 = vad.process(chunk)
+
+    # Reset
+    vad.reset()
+
+    # Process another chunk - should work normally
+    result2 = vad.process(chunk)
+
+    assert result1.is_speech == result2.is_speech
+    assert result1.confidence == result2.confidence
+
+
+def test_webrtc_vad_reset_clears_validation_state():
+    """Test reset allows revalidation with different sample rates."""
+    vad = WebRTCVAD()
+
+    # Process with 16kHz
+    chunk1 = create_speech_chunk(sample_rate=16000)
+    vad.process(chunk1)
+
+    # Reset should clear validation state
+    vad.reset()
+
+    # Should be able to process with different sample rate
+    # Note: In practice, same VAD instance should use same sample rate,
+    # but reset should clear the validation flag
+    chunk2 = create_speech_chunk(sample_rate=8000)
+    result = vad.process(chunk2)
+    assert result is not None
