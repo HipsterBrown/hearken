@@ -1,5 +1,4 @@
 """Tests for WebRTC VAD implementation."""
-import pytest
 from hearken.vad.webrtc import WebRTCVAD
 
 
