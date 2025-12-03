@@ -22,7 +22,7 @@ The pipeline consists of three independent threads:
 - **Data Types** (`types.py`): `AudioChunk`, `SpeechSegment`, `VADResult`, `DetectorConfig`, `DetectorState`
 - **Interfaces** (`interfaces.py`): `AudioSource`, `Transcriber`, `VAD` abstract base classes
 - **SpeechDetector** (`detector.py`): 4-state FSM for utterance segmentation
-- **VAD Implementations**: `EnergyVAD` (baseline), WebRTCVAD (future)
+- **VAD Implementations**: `EnergyVAD` (baseline), `WebRTCVAD` (production-ready)
 - **Adapters** (`adapters/sr.py`): speech_recognition library integration
 
 ### Module Structure
@@ -36,7 +36,8 @@ hearken/
 ├── detector.py           # SpeechDetector FSM
 ├── vad/
 │   ├── __init__.py
-│   └── energy.py         # EnergyVAD implementation
+│   ├── energy.py         # EnergyVAD implementation
+│   └── webrtc.py         # WebRTCVAD implementation
 └── adapters/
     ├── __init__.py
     └── sr.py             # speech_recognition adapters
@@ -164,7 +165,7 @@ uv run pytest --cov=hearken --cov-report=html
 
 1. **Blocking the capture thread**: Never call slow operations in capture loop. Queue puts must be non-blocking.
 
-2. **Ignoring VAD constraints**: WebRTC VAD (future) requires specific sample rates and frame sizes. Validate early.
+2. **Ignoring VAD constraints**: WebRTC VAD requires specific sample rates (8/16/32/48 kHz) and frame durations (10/20/30 ms). Validate early.
 
 3. **Forgetting padding buffer**: Speech detection is reactive - without pre-roll padding, you'll miss the first 300ms of utterances.
 
@@ -180,20 +181,22 @@ uv run pytest --cov=hearken --cov-report=html
 ### Optional
 - `SpeechRecognition` >= 3.8 (recognition backends via adapters)
 - `PyAudio` >= 0.2.11 (audio capture, installed via speech_recognition)
+- `webrtcvad-wheels` >= 2.0.10 (WebRTC VAD support)
 
-Install with: `pip install hearken[sr]` for speech_recognition support
+Install with: `pip install hearken[sr]` for speech_recognition support, or `pip install hearken[webrtc]` for WebRTC VAD support
 
 ## Version
 
-Current version: **0.1.0** (MVP Release)
+Current version: **0.1.3** (WebRTC VAD Release)
 
 - 3-thread architecture with clean abstractions
-- EnergyVAD implementation
+- EnergyVAD and WebRTCVAD implementations
 - 4-state FSM detector
 - Active and passive modes
 - speech_recognition adapters
 
 Roadmap:
-- v0.2: WebRTC VAD support
+- ✅ v0.1: MVP with EnergyVAD
+- ✅ v0.2: WebRTC VAD support
 - v0.3: Async transcriber support
 - v0.4: Silero VAD (neural network)
