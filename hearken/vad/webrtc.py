@@ -57,8 +57,24 @@ class WebRTCVAD(VAD):
 
     def process(self, chunk: AudioChunk) -> VADResult:
         """Process audio chunk and return speech detection result."""
-        # TODO: Implement validation and processing
-        raise NotImplementedError()
+        # Validate sample rate on first call
+        if not self._validated:
+            if chunk.sample_rate not in self.SUPPORTED_SAMPLE_RATES:
+                raise ValueError(
+                    f"WebRTC VAD requires sample rate of {self.SUPPORTED_SAMPLE_RATES} Hz. "
+                    f"Got {chunk.sample_rate} Hz. "
+                    f"Configure your AudioSource with a supported sample rate."
+                )
+            self._sample_rate = chunk.sample_rate
+            self._validated = True
+
+        # Call WebRTC VAD
+        is_speech = self._vad.is_speech(chunk.data, self._sample_rate)
+
+        # Map boolean to confidence
+        confidence = 1.0 if is_speech else 0.0
+
+        return VADResult(is_speech=is_speech, confidence=confidence)
 
     def reset(self) -> None:
         """Reset internal state between utterances."""
