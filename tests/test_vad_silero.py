@@ -3,7 +3,7 @@
 import os
 import pytest
 from pathlib import Path
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch, MagicMock, mock_open
 from hearken.vad.silero import SileroVAD
 
 
@@ -88,3 +88,51 @@ def test_silero_vad_model_path_parameter_overrides_env():
          patch.dict(os.environ, {"HEARKEN_SILERO_MODEL_PATH": "/env/path/model.onnx"}):
         vad = SileroVAD(model_path="/param/path/model.onnx")
         assert vad._model_path == "/param/path/model.onnx"
+
+
+def test_silero_vad_downloads_model_if_missing():
+    """Test model is downloaded if not present."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.Path.exists', return_value=False), \
+         patch('hearken.vad.silero.Path.mkdir'), \
+         patch('hearken.vad.silero.urllib.request.urlopen') as mock_urlopen, \
+         patch('builtins.open', mock_open()) as mock_file:
+
+        # Mock HTTP response
+        mock_response = MagicMock()
+        mock_response.read.return_value = b'fake model data'
+        mock_urlopen.return_value.__enter__.return_value = mock_response
+
+        vad = SileroVAD()
+
+        # Verify download was attempted
+        mock_urlopen.assert_called_once()
+        assert SileroVAD.MODEL_URL in str(mock_urlopen.call_args)
+
+
+def test_silero_vad_skips_download_if_exists():
+    """Test model download is skipped if file exists."""
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.Path.exists', return_value=True), \
+         patch('hearken.vad.silero.urllib.request.urlopen') as mock_urlopen:
+
+        vad = SileroVAD()
+
+        # Verify download was NOT attempted
+        mock_urlopen.assert_not_called()
+
+
+def test_silero_vad_download_failure_raises_error():
+    """Test clear error when model download fails."""
+    with patch('hearken.vad.silero.Path.exists', return_value=False), \
+         patch('hearken.vad.silero.Path.mkdir'), \
+         patch('hearken.vad.silero.urllib.request.urlopen', side_effect=Exception("Network error")):
+
+        with pytest.raises(RuntimeError) as exc_info:
+            SileroVAD()
+
+        error_msg = str(exc_info.value)
+        assert "Failed to download Silero VAD model" in error_msg
+        assert "Network error" in error_msg
+        assert SileroVAD.MODEL_URL in error_msg
+        assert "HEARKEN_SILERO_MODEL_PATH" in error_msg

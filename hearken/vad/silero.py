@@ -1,6 +1,7 @@
 """Silero VAD implementation using ONNX Runtime."""
 
 import os
+import urllib.request
 from pathlib import Path
 from typing import Optional
 import numpy as np
@@ -71,8 +72,32 @@ class SileroVAD(VAD):
 
     def _ensure_model_downloaded(self) -> None:
         """Download model if it doesn't exist at resolved path."""
-        # Placeholder - will implement in next task
-        pass
+        model_file = Path(self._model_path)
+
+        # Skip download if file exists
+        if model_file.exists():
+            return
+
+        # Create cache directory if needed
+        model_file.parent.mkdir(parents=True, exist_ok=True)
+
+        # Download model
+        try:
+            with urllib.request.urlopen(self.MODEL_URL) as response:
+                model_data = response.read()
+
+            # Write to file
+            with open(model_file, 'wb') as f:
+                f.write(model_data)
+
+        except Exception as e:
+            raise RuntimeError(
+                f"Failed to download Silero VAD model from GitHub: {e}\n"
+                f"Please check your internet connection or download manually:\n"
+                f"  URL: {self.MODEL_URL}\n"
+                f"  Save to: {self._model_path}\n"
+                f"Or set environment variable: HEARKEN_SILERO_MODEL_PATH=/path/to/model.onnx"
+            )
 
     def process(self, chunk: AudioChunk) -> VADResult:
         """Process audio chunk and return VAD result."""
