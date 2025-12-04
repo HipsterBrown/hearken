@@ -261,3 +261,105 @@ def test_silero_vad_reset_clears_validation():
         vad.reset()
         assert vad._validated is False
         assert vad._sample_rate is None
+
+
+# Threshold Application Tests
+
+def test_silero_vad_threshold_below():
+    """Test confidence below threshold returns is_speech=False."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock returns confidence=0.3
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.3]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        result = vad.process(chunk)
+        assert result.is_speech is False
+        assert result.confidence == 0.3
+
+
+def test_silero_vad_threshold_above():
+    """Test confidence above threshold returns is_speech=True."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock returns confidence=0.7
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.7]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        result = vad.process(chunk)
+        assert result.is_speech is True
+        assert result.confidence == 0.7
+
+
+def test_silero_vad_threshold_boundary():
+    """Test confidence exactly at threshold returns is_speech=True."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock returns confidence=0.5
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.5]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        result = vad.process(chunk)
+        assert result.is_speech is True  # >= threshold
+        assert result.confidence == 0.5
+
+
+def test_silero_vad_custom_threshold():
+    """Test custom threshold value works correctly."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock returns confidence=0.6
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.6]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.7)
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        result = vad.process(chunk)
+        assert result.is_speech is False  # 0.6 < 0.7
+        assert result.confidence == 0.6
