@@ -4,9 +4,14 @@ Silero VAD provides superior accuracy compared to rule-based approaches,
 especially in noisy environments. Requires 16kHz audio.
 """
 
+import logging
+
 import speech_recognition as sr
 from hearken import Listener, SileroVAD
 from hearken.adapters.sr import SpeechRecognitionSource, SRTranscriber
+
+logging.basicConfig(level=logging.DEBUG)
+logging.getLogger("hearken").setLevel(logging.DEBUG)
 
 # Setup recognizer with 16kHz sample rate
 recognizer = sr.Recognizer()
@@ -18,7 +23,7 @@ listener = Listener(
     source=SpeechRecognitionSource(mic),
     transcriber=SRTranscriber(recognizer),
     vad=SileroVAD(threshold=0.5),
-    on_transcript=lambda text, seg: print(f"You said: {text}")
+    on_transcript=lambda text, seg: print(f"You said: {text}"),
 )
 
 print("Listening with Silero VAD (neural network)...")

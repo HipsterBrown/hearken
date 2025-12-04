@@ -1,5 +1,6 @@
 """Silero VAD implementation using ONNX Runtime."""
 
+import logging
 import os
 import urllib.request
 from pathlib import Path
@@ -10,12 +11,13 @@ try:
     import onnxruntime as ort
 except ImportError:
     raise ImportError(
-        "onnxruntime is required for SileroVAD. "
-        "Install with: pip install hearken[silero]"
+        "onnxruntime is required for SileroVAD. " "Install with: pip install hearken[silero]"
     )
 
 from hearken.interfaces import VAD
 from hearken.types import AudioChunk, VADResult
+
+logger = logging.getLogger("hearken")
 
 
 class SileroVAD(VAD):
@@ -40,11 +42,7 @@ class SileroVAD(VAD):
     DEFAULT_CACHE_DIR = Path.home() / ".cache" / "hearken"
     DEFAULT_MODEL_NAME = "silero_vad_v5.onnx"
 
-    def __init__(
-        self,
-        threshold: float = 0.5,
-        model_path: Optional[str] = None
-    ):
+    def __init__(self, threshold: float = 0.5, model_path: Optional[str] = None):
         if not 0.0 <= threshold <= 1.0:
             raise ValueError(
                 f"Threshold must be between 0.0 and 1.0, got {threshold}\n"
@@ -58,6 +56,8 @@ class SileroVAD(VAD):
         self._session = ort.InferenceSession(self._model_path)
         self._validated = False
         self._sample_rate: Optional[int] = None
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros(0)
 
     def _resolve_model_path(self, model_path: Optional[str]) -> str:
         """Resolve model path from parameter, env var, or default."""
@@ -87,7 +87,7 @@ class SileroVAD(VAD):
                 model_data = response.read()
 
             # Write to file
-            with open(model_file, 'wb') as f:
+            with open(model_file, "wb") as f:
                 f.write(model_data)
 
         except Exception as e:
@@ -129,23 +129,26 @@ class SileroVAD(VAD):
         # Normalize to [-1.0, 1.0] range
         audio_float32 = audio_int16.astype(np.float32) / 32768.0
 
-        # Run ONNX inference
-        # Note: For now, we'll use simple inference without state management
-        # Full state management (h, c tensors) will be implemented in later task
-        ort_inputs = {'input': audio_float32[np.newaxis, :]}
-        ort_outputs = self._session.run(None, ort_inputs)
+        input_data = audio_float32[np.newaxis, :]
 
-        # Extract confidence from output
-        # ort_outputs is a list of arrays, first one contains the speech probability
-        confidence_array = ort_outputs[0]
-        # Handle nested structure - confidence_array is [[value]] or [[[value]]]
-        while hasattr(confidence_array, '__getitem__') and len(confidence_array) > 0:
-            if isinstance(confidence_array[0], (int, float, np.number)):
-                confidence = float(confidence_array[0])
-                break
-            confidence_array = confidence_array[0]
-        else:
-            confidence = float(confidence_array)
+        batch_size = input_data.shape[0]
+        context_size = 64 if self._sample_rate == 16000 else 32
+
+        # Create context with the same dtype as input (usually float32)
+        self._context = np.zeros((batch_size, context_size), dtype=input_data.dtype)
+
+        # Concatenate along the second axis (time dimension)
+        input_data = np.concatenate([self._context, input_data], axis=1)
+        # Run ONNX inference
+        ort_inputs = {
+            "input": input_data,
+            "state": self._state,
+            "sr": np.array(self._sample_rate, dtype=np.int64),
+        }
+        confidence_tensor, self._state = self._session.run(None, ort_inputs)
+        self._context = input_data[..., -context_size]
+
+        confidence = confidence_tensor.item()
 
         # Apply threshold
         is_speech = confidence >= self._threshold
@@ -164,3 +167,10 @@ class SileroVAD(VAD):
         # Clear validation state
         self._validated = False
         self._sample_rate = None
+        self._state = np.zeros((2, 1, 128), dtype=np.float32)
+        self._context = np.zeros(0)
+
+    @property
+    def required_frame_duration_ms(self) -> int | float | None:
+        """Required frame duration in ms, or None if flexible."""
+        return 32
