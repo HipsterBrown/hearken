@@ -22,6 +22,9 @@ pip install hearken[sr]
 # With WebRTC VAD support
 pip install hearken[webrtc]
 
+# With Silero VAD support (neural network)
+pip install hearken[silero]
+
 # All optional dependencies
 pip install hearken[all]
 ```
@@ -69,6 +72,11 @@ except KeyboardInterrupt:
   - Requires sample rates: 8000, 16000, 32000, or 48000 Hz
   - Configurable aggressiveness (0-3)
   - Install with: `pip install hearken[webrtc]`
+- **SileroVAD**: Neural network-based VAD for superior accuracy
+  - Requires 16kHz audio
+  - Configurable sensitivity threshold
+  - Automatic model download and caching
+  - Install with: `pip install hearken[silero]`
 
 ## Architecture
 
@@ -134,8 +142,8 @@ ruff check hearken/ tests/
 
 - ✅ v0.1: EnergyVAD, core pipeline
 - ✅ v0.2: WebRTC VAD support
-- v0.3: Async transcriber support
-- v0.4: Silero VAD (neural network)
+- ✅ v0.3: Silero VAD (neural network)
+- v0.4: Async transcriber support
 
 ## License
 
