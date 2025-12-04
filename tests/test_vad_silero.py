@@ -136,3 +136,128 @@ def test_silero_vad_download_failure_raises_error():
         assert "Network error" in error_msg
         assert SileroVAD.MODEL_URL in error_msg
         assert "HEARKEN_SILERO_MODEL_PATH" in error_msg
+
+
+# Sample Rate Validation Tests
+
+def test_silero_vad_accepts_16khz():
+    """Test SileroVAD accepts 16kHz audio."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock ONNX session inference
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.7]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+
+        # Create 16kHz audio chunk
+        chunk = AudioChunk(
+            data=b'\x00' * 960,  # 30ms at 16kHz = 480 samples * 2 bytes
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        # Should not raise
+        result = vad.process(chunk)
+        assert vad._validated is True
+        assert vad._sample_rate == 16000
+
+
+def test_silero_vad_rejects_non_16khz():
+    """Test SileroVAD rejects non-16kHz audio with clear error."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession'), \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        vad = SileroVAD(threshold=0.5)
+
+        # Test various invalid sample rates
+        invalid_rates = [8000, 32000, 44100, 48000]
+
+        for rate in invalid_rates:
+            chunk = AudioChunk(
+                data=b'\x00' * 480,
+                sample_rate=rate,
+                sample_width=2,
+                timestamp=0.0
+            )
+
+            with pytest.raises(ValueError) as exc_info:
+                vad.process(chunk)
+
+            error_msg = str(exc_info.value)
+            assert "Invalid sample rate for Silero VAD" in error_msg
+            assert str(rate) in error_msg
+            assert "16000 Hz" in error_msg
+            assert "Please configure your AudioSource" in error_msg
+
+
+def test_silero_vad_validates_only_on_first_call():
+    """Test sample rate validation only happens on first process() call."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock ONNX session inference
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.7]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+
+        # Create 16kHz audio chunk
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        # First call should validate
+        assert vad._validated is False
+        vad.process(chunk)
+        assert vad._validated is True
+
+        # Second call should not re-validate
+        vad.process(chunk)
+        assert vad._validated is True
+
+
+def test_silero_vad_reset_clears_validation():
+    """Test reset() clears validation state."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        # Mock ONNX session inference
+        mock_instance = Mock()
+        mock_instance.run.return_value = ([[[0.7]]], None, None)
+        mock_session.return_value = mock_instance
+
+        vad = SileroVAD(threshold=0.5)
+
+        # Create 16kHz audio chunk
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+
+        # Process to set validation
+        vad.process(chunk)
+        assert vad._validated is True
+        assert vad._sample_rate == 16000
+
+        # Reset should clear validation
+        vad.reset()
+        assert vad._validated is False
+        assert vad._sample_rate is None

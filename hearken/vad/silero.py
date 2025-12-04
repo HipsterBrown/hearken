@@ -100,11 +100,67 @@ class SileroVAD(VAD):
             )
 
     def process(self, chunk: AudioChunk) -> VADResult:
-        """Process audio chunk and return VAD result."""
-        # Placeholder - will implement in later task
-        raise NotImplementedError()
+        """Process audio chunk and return VAD result.
+
+        Args:
+            chunk: Audio chunk to process. Must be 16kHz.
+
+        Returns:
+            VADResult with is_speech boolean and confidence score.
+
+        Raises:
+            ValueError: If sample rate is not 16kHz.
+        """
+        # Validate 16kHz on first call
+        if not self._validated:
+            if chunk.sample_rate != 16000:
+                raise ValueError(
+                    f"Invalid sample rate for Silero VAD: {chunk.sample_rate} Hz\n"
+                    f"Silero VAD requires 16000 Hz audio.\n"
+                    f"Please configure your AudioSource to use 16kHz sample rate."
+                )
+
+            self._sample_rate = chunk.sample_rate
+            self._validated = True
+
+        # Convert bytes to numpy float32 array
+        audio_int16 = np.frombuffer(chunk.data, dtype=np.int16)
+
+        # Normalize to [-1.0, 1.0] range
+        audio_float32 = audio_int16.astype(np.float32) / 32768.0
+
+        # Run ONNX inference
+        # Note: For now, we'll use simple inference without state management
+        # Full state management (h, c tensors) will be implemented in later task
+        ort_inputs = {'input': audio_float32[np.newaxis, :]}
+        ort_outputs = self._session.run(None, ort_inputs)
+
+        # Extract confidence from output
+        # ort_outputs is a list of arrays, first one contains the speech probability
+        confidence_array = ort_outputs[0]
+        # Handle nested structure - confidence_array is [[value]] or [[[value]]]
+        while hasattr(confidence_array, '__getitem__') and len(confidence_array) > 0:
+            if isinstance(confidence_array[0], (int, float, np.number)):
+                confidence = float(confidence_array[0])
+                break
+            confidence_array = confidence_array[0]
+        else:
+            confidence = float(confidence_array)
+
+        # Apply threshold
+        is_speech = confidence >= self._threshold
+
+        return VADResult(is_speech=is_speech, confidence=confidence)
 
     def reset(self) -> None:
-        """Reset VAD state."""
-        # Placeholder - will implement in later task
-        raise NotImplementedError()
+        """Reset VAD state by reinitializing ONNX session.
+
+        Creates a new inference session to ensure completely clean state.
+        Also clears validation state to allow sample rate revalidation.
+        """
+        # Reinitialize ONNX session for clean state
+        self._session = ort.InferenceSession(self._model_path)
+
+        # Clear validation state
+        self._validated = False
+        self._sample_rate = None
