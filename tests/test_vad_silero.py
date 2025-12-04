@@ -230,39 +230,6 @@ def test_silero_vad_validates_only_on_first_call():
         assert vad._validated is True
 
 
-def test_silero_vad_reset_clears_validation():
-    """Test reset() clears validation state."""
-    from hearken.types import AudioChunk
-
-    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
-         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
-
-        # Mock ONNX session inference
-        mock_instance = Mock()
-        mock_instance.run.return_value = ([[[0.7]]], None, None)
-        mock_session.return_value = mock_instance
-
-        vad = SileroVAD(threshold=0.5)
-
-        # Create 16kHz audio chunk
-        chunk = AudioChunk(
-            data=b'\x00' * 960,
-            sample_rate=16000,
-            sample_width=2,
-            timestamp=0.0
-        )
-
-        # Process to set validation
-        vad.process(chunk)
-        assert vad._validated is True
-        assert vad._sample_rate == 16000
-
-        # Reset should clear validation
-        vad.reset()
-        assert vad._validated is False
-        assert vad._sample_rate is None
-
-
 # Threshold Application Tests
 
 def test_silero_vad_threshold_below():
@@ -363,3 +330,58 @@ def test_silero_vad_custom_threshold():
         result = vad.process(chunk)
         assert result.is_speech is False  # 0.6 < 0.7
         assert result.confidence == 0.6
+
+
+# Reset Functionality Tests
+
+def test_silero_vad_reset():
+    """Test reset reinitializes ONNX session."""
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session_class, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        mock_session_instance = MagicMock()
+        mock_session_class.return_value = mock_session_instance
+
+        vad = SileroVAD()
+
+        # Verify session created once on init
+        assert mock_session_class.call_count == 1
+
+        # Reset
+        vad.reset()
+
+        # Verify session created again
+        assert mock_session_class.call_count == 2
+
+
+def test_silero_vad_reset_clears_validation_state():
+    """Test reset clears validation state."""
+    from hearken.types import AudioChunk
+
+    with patch('hearken.vad.silero.ort.InferenceSession') as mock_session, \
+         patch('hearken.vad.silero.SileroVAD._ensure_model_downloaded'):
+
+        mock_output = MagicMock()
+        mock_output.run.return_value = ([[[0.7]]], None, None)
+        mock_session.return_value = mock_output
+
+        vad = SileroVAD()
+
+        # Process chunk to trigger validation
+        chunk = AudioChunk(
+            data=b'\x00' * 960,
+            sample_rate=16000,
+            sample_width=2,
+            timestamp=0.0
+        )
+        vad.process(chunk)
+
+        assert vad._validated is True
+        assert vad._sample_rate == 16000
+
+        # Reset
+        vad.reset()
+
+        # Verify validation state cleared
+        assert vad._validated is False
+        assert vad._sample_rate is None
