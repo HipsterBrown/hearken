@@ -1,4 +1,5 @@
 import pytest
+from unittest.mock import Mock, MagicMock
 
 # Skip all tests if SpeechRecognition not installed
 sr = pytest.importorskip("speech_recognition")
@@ -8,21 +9,40 @@ from hearken.types import SpeechSegment
 import numpy as np
 
 
-def test_speech_recognition_source_lifecycle():
+@pytest.fixture
+def mock_microphone():
+    """Create a mock Microphone that doesn't require actual audio device."""
+    mic = Mock(spec=sr.Microphone)
+    mic.SAMPLE_RATE = 16000
+    mic.SAMPLE_WIDTH = 2
+
+    # Mock the context manager protocol
+    mic.__enter__ = Mock(return_value=mic)
+    mic.__exit__ = Mock(return_value=None)
+
+    # Mock the stream for read operations
+    mic.stream = Mock()
+    mic.stream.read = Mock(return_value=b"\x00" * 1024)
+
+    return mic
+
+
+def test_speech_recognition_source_lifecycle(mock_microphone):
     """Test SpeechRecognitionSource open/close."""
-    mic = sr.Microphone()
-    source = SpeechRecognitionSource(mic)
+    source = SpeechRecognitionSource(mock_microphone)
 
     source.open()
     assert source.sample_rate > 0
     assert source.sample_width > 0
+    assert mock_microphone.__enter__.called
+
     source.close()
+    assert mock_microphone.__exit__.called
 
 
-def test_speech_recognition_source_context_manager():
+def test_speech_recognition_source_context_manager(mock_microphone):
     """Test SpeechRecognitionSource context manager."""
-    mic = sr.Microphone()
-    source = SpeechRecognitionSource(mic)
+    source = SpeechRecognitionSource(mock_microphone)
 
     with source as s:
         assert s is source
