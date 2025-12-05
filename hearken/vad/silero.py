@@ -38,7 +38,9 @@ class SileroVAD(VAD):
         RuntimeError: If model download fails
     """
 
-    MODEL_URL = "https://github.com/snakers4/silero-vad/raw/master/files/silero_vad.onnx"
+    MODEL_URL = (
+        "https://github.com/snakers4/silero-vad/raw/master/src/silero_vad/data/silero_vad.onnx"
+    )
     DEFAULT_CACHE_DIR = Path.home() / ".cache" / "hearken"
     DEFAULT_MODEL_NAME = "silero_vad_v5.onnx"
 
@@ -56,6 +58,7 @@ class SileroVAD(VAD):
         self._session = ort.InferenceSession(self._model_path)
         self._validated = False
         self._sample_rate: Optional[int] = None
+        self._sample_step: Optional[int] = None
         self._state = np.zeros((2, 1, 128), dtype=np.float32)
         self._context = np.zeros(0)
 
@@ -113,14 +116,19 @@ class SileroVAD(VAD):
         """
         # Validate 16kHz on first call
         if not self._validated:
-            if chunk.sample_rate != 16000:
+            if chunk.sample_rate % 16000 == 0:
+                self._sample_step = chunk.sample_rate // 16000
+                self._sample_rate = 16000
+            else:
+                self._sample_rate = chunk.sample_rate
+
+            if self._sample_rate != 16000:
                 raise ValueError(
                     f"Invalid sample rate for Silero VAD: {chunk.sample_rate} Hz\n"
-                    f"Silero VAD requires 16000 Hz audio.\n"
+                    f"Silero VAD requires 16000 Hz audio (or a multiple).\n"
                     f"Please configure your AudioSource to use 16kHz sample rate."
                 )
 
-            self._sample_rate = chunk.sample_rate
             self._validated = True
 
         # Convert bytes to numpy float32 array
@@ -131,8 +139,11 @@ class SileroVAD(VAD):
 
         input_data = audio_float32[np.newaxis, :]
 
+        if self._sample_step is not None:
+            input_data = input_data[:, :: self._sample_step]
+
         batch_size = input_data.shape[0]
-        context_size = 64 if self._sample_rate == 16000 else 32
+        context_size = 64
 
         # Create context with the same dtype as input (usually float32)
         self._context = np.zeros((batch_size, context_size), dtype=input_data.dtype)

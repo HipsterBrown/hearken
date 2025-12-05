@@ -13,9 +13,10 @@ from hearken.adapters.sr import SpeechRecognitionSource, SRTranscriber
 logging.basicConfig(level=logging.DEBUG)
 logging.getLogger("hearken").setLevel(logging.DEBUG)
 
-# Setup recognizer with 16kHz sample rate
+# Setup recognizer with default sample rate
 recognizer = sr.Recognizer()
-mic = sr.Microphone(sample_rate=16000)
+mics = sr.Microphone.list_microphone_names()
+mic = sr.Microphone(device_index=mics.index("MacBook Pro Microphone"))
 
 # Create listener with Silero VAD
 # threshold=0.5 is default (lower=more sensitive, higher=more conservative)
