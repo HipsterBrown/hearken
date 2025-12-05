@@ -194,7 +194,7 @@ def test_silero_vad_accepts_16khz():
 
 
 def test_silero_vad_rejects_non_16khz():
-    """Test SileroVAD rejects non-16kHz audio with clear error."""
+    """Test SileroVAD rejects non-16kHz (or multiples) audio with clear error."""
     from hearken.types import AudioChunk
 
     with (
@@ -205,7 +205,7 @@ def test_silero_vad_rejects_non_16khz():
         vad = SileroVAD(threshold=0.5)
 
         # Test various invalid sample rates
-        invalid_rates = [8000, 32000, 44100, 48000]
+        invalid_rates = [8000, 44100]
 
         for rate in invalid_rates:
             chunk = AudioChunk(data=b"\x00" * 480, sample_rate=rate, sample_width=2, timestamp=0.0)
