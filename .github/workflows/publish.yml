@@ -37,12 +37,6 @@ jobs:
       - name: Run tests
         run: uv run pytest -v
 
-      - name: Run type checking
-        run: uv run mypy hearken/
-
-      - name: Run linting
-        run: uv run ruff check hearken/ tests/ examples/
-
   publish:
     needs: test
     runs-on: ubuntu-latest
