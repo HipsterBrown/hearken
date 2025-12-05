@@ -22,7 +22,7 @@ The pipeline consists of three independent threads:
 - **Data Types** (`types.py`): `AudioChunk`, `SpeechSegment`, `VADResult`, `DetectorConfig`, `DetectorState`
 - **Interfaces** (`interfaces.py`): `AudioSource`, `Transcriber`, `VAD` abstract base classes
 - **SpeechDetector** (`detector.py`): 4-state FSM for utterance segmentation
-- **VAD Implementations**: `EnergyVAD` (baseline), `WebRTCVAD` (production-ready)
+- **VAD Implementations**: `EnergyVAD` (baseline), `WebRTCVAD` (production-ready), `SileroVAD` (neural network)
 - **Adapters** (`adapters/sr.py`): speech_recognition library integration
 
 ### Module Structure
@@ -37,7 +37,8 @@ hearken/
 ├── vad/
 │   ├── __init__.py
 │   ├── energy.py         # EnergyVAD implementation
-│   └── webrtc.py         # WebRTCVAD implementation
+│   ├── webrtc.py         # WebRTCVAD implementation
+│   └── silero.py         # SileroVAD implementation
 └── adapters/
     ├── __init__.py
     └── sr.py             # speech_recognition adapters
@@ -173,6 +174,8 @@ uv run pytest --cov=hearken --cov-report=html
 
 5. **Assuming numpy dtypes**: Convert `numpy.bool_` and `numpy.float_` to Python types when needed.
 
+6. **Silero VAD sample rate**: Silero VAD requires exactly 16kHz audio. Unlike WebRTC VAD which supports multiple rates, Silero is strict about 16kHz.
+
 ## Dependencies
 
 ### Required
@@ -182,15 +185,16 @@ uv run pytest --cov=hearken --cov-report=html
 - `SpeechRecognition` >= 3.8 (recognition backends via adapters)
 - `PyAudio` >= 0.2.11 (audio capture, installed via speech_recognition)
 - `webrtcvad-wheels` >= 2.0.10 (WebRTC VAD support)
+- `onnxruntime` >= 1.16.0 (Silero VAD support)
 
-Install with: `pip install hearken[sr]` for speech_recognition support, or `pip install hearken[webrtc]` for WebRTC VAD support
+Install with: `pip install hearken[sr]` for speech_recognition support, `pip install hearken[webrtc]` for WebRTC VAD support, or `pip install hearken[silero]` for Silero VAD support
 
 ## Version
 
-Current version: **0.1.3** (WebRTC VAD Release)
+Current version: **0.3.0** (Silero VAD Release)
 
 - 3-thread architecture with clean abstractions
-- EnergyVAD and WebRTCVAD implementations
+- EnergyVAD, WebRTCVAD, and SileroVAD implementations
 - 4-state FSM detector
 - Active and passive modes
 - speech_recognition adapters
@@ -198,5 +202,5 @@ Current version: **0.1.3** (WebRTC VAD Release)
 Roadmap:
 - ✅ v0.1: MVP with EnergyVAD
 - ✅ v0.2: WebRTC VAD support
-- v0.3: Async transcriber support
-- v0.4: Silero VAD (neural network)
+- ✅ v0.3: Silero VAD (neural network)
+- v0.4: Async transcriber support

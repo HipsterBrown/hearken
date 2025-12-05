@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "hearken"
-version = "0.2.0"
+version = "0.3.0"
 description = "Robust speech recognition pipeline that prevents audio drops"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -36,6 +36,9 @@ sr = [
 webrtc = [
     "webrtcvad-wheels>=2.0.10",
 ]
+silero = [
+    "onnxruntime>=1.16.0",
+]
 dev = [
     "pytest>=7.0",
     "pytest-cov>=4.0",
@@ -44,7 +47,7 @@ dev = [
     "ruff>=0.1.0",
 ]
 all = [
-    "hearken[sr,webrtc]",
+    "hearken[sr,webrtc,silero]",
 ]
 
 [project.urls]

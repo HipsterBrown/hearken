@@ -11,7 +11,7 @@ from .types import AudioChunk, SpeechSegment, DetectorConfig
 from .detector import SpeechDetector
 from .vad.energy import EnergyVAD
 
-logger = logging.getLogger('hearken')
+logger = logging.getLogger("hearken")
 
 
 class Listener:
@@ -90,25 +90,15 @@ class Listener:
 
         # Start threads
         self._threads = [
-            threading.Thread(
-                target=self._capture_loop,
-                name="hearken-capture",
-                daemon=True
-            ),
-            threading.Thread(
-                target=self._detect_loop,
-                name="hearken-detect",
-                daemon=True
-            ),
+            threading.Thread(target=self._capture_loop, name="hearken-capture", daemon=True),
+            threading.Thread(target=self._detect_loop, name="hearken-detect", daemon=True),
         ]
 
         # Only start transcribe thread if needed for passive mode
         if self.on_transcript:
             self._threads.append(
                 threading.Thread(
-                    target=self._transcribe_loop,
-                    name="hearken-transcribe",
-                    daemon=True
+                    target=self._transcribe_loop, name="hearken-transcribe", daemon=True
                 )
             )
 
@@ -180,10 +170,14 @@ class Listener:
 
     def _capture_loop(self) -> None:
         """Capture thread: reads audio chunks at fixed intervals."""
-        frame_duration_ms = self.vad.required_frame_duration_ms or self.detector_config.frame_duration_ms
+        frame_duration_ms = (
+            self.vad.required_frame_duration_ms or self.detector_config.frame_duration_ms
+        )
         chunk_samples = int(self.source.sample_rate * frame_duration_ms / 1000)
 
-        logger.debug(f"Capture thread started (frame_duration={frame_duration_ms}ms, samples={chunk_samples})")
+        logger.debug(
+            f"Capture thread started (frame_duration={frame_duration_ms}ms, samples={chunk_samples})"
+        )
 
         chunks_captured = 0
         chunks_dropped = 0
@@ -208,7 +202,9 @@ class Listener:
                     chunks_dropped += 1
                     if chunks_dropped % 100 == 0:
                         drop_rate = chunks_dropped / (chunks_captured + chunks_dropped) * 100
-                        logger.warning(f"Capture queue full, dropped {chunks_dropped} chunks ({drop_rate:.1f}%)")
+                        logger.warning(
+                            f"Capture queue full, dropped {chunks_dropped} chunks ({drop_rate:.1f}%)"
+                        )
 
             except Exception as e:
                 if self._running:
@@ -216,7 +212,9 @@ class Listener:
                     self.on_error(e)
                 break
 
-        logger.debug(f"Capture thread stopped (captured={chunks_captured}, dropped={chunks_dropped})")
+        logger.debug(
+            f"Capture thread stopped (captured={chunks_captured}, dropped={chunks_dropped})"
+        )
 
     def _detect_loop(self) -> None:
         """Detection thread: runs VAD and FSM to segment audio."""
@@ -249,7 +247,7 @@ class Listener:
                 target=self._safe_callback,
                 args=(self.on_speech, segment),
                 daemon=False,  # Not daemon so it completes
-                name="hearken-callback"
+                name="hearken-callback",
             )
             t.start()
 
@@ -290,7 +288,7 @@ class Listener:
                         target=self._safe_callback,
                         args=(self.on_transcript, text, segment),
                         daemon=False,
-                        name="hearken-callback"
+                        name="hearken-callback",
                     ).start()
 
             except Exception as e:

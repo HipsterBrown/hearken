@@ -49,7 +49,7 @@ class Transcriber(ABC):
     """Abstract interface for speech-to-text transcription."""
 
     @abstractmethod
-    def transcribe(self, segment: 'SpeechSegment') -> str:
+    def transcribe(self, segment: "SpeechSegment") -> str:
         """Transcribe audio to text. May raise exceptions for API errors."""
         ...
 
@@ -58,7 +58,7 @@ class VAD(ABC):
     """Voice Activity Detection interface."""
 
     @abstractmethod
-    def process(self, chunk: 'AudioChunk') -> 'VADResult':
+    def process(self, chunk: "AudioChunk") -> "VADResult":
         """Process audio chunk and return speech detection result."""
         ...
 
@@ -73,6 +73,6 @@ class VAD(ABC):
         return None
 
     @property
-    def required_frame_duration_ms(self) -> int | None:
+    def required_frame_duration_ms(self) -> int | float | None:
         """Required frame duration in ms, or None if flexible."""
         return None

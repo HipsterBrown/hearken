@@ -5,7 +5,7 @@ Decouples audio capture, voice activity detection, and transcription
 into independent threads to prevent audio drops during processing.
 """
 
-__version__ = "0.2.0"
+__version__ = "0.3.0"
 
 # Core components
 from .listener import Listener
@@ -30,6 +30,12 @@ try:
 except ImportError:
     _webrtc_available = False
 
+try:
+    from .vad.silero import SileroVAD
+    _silero_available = True
+except ImportError:
+    _silero_available = False
+
 # Build __all__ dynamically
 __all__ = [
     # Main class
@@ -50,3 +56,6 @@ __all__ = [
 
 if _webrtc_available:
     __all__.append("WebRTCVAD")
+
+if _silero_available:
+    __all__.append("SileroVAD")
