@@ -18,7 +18,7 @@ from .types import (
 )
 
 # Interfaces
-from .interfaces import AudioSource, Transcriber, VAD
+from .interfaces import AudioSource, AsyncAudioSource, Transcriber, VAD
 
 # VAD implementations
 from .vad.energy import EnergyVAD
@@ -48,6 +48,7 @@ __all__ = [
     "DetectorState",
     # Interfaces
     "AudioSource",
+    "AsyncAudioSource",
     "Transcriber",
     "VAD",
     # VAD implementations

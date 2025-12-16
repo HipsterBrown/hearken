@@ -1,6 +1,7 @@
+import asyncio
 import numpy as np
 from hearken import Listener
-from hearken.interfaces import AudioSource, Transcriber
+from hearken.interfaces import AudioSource, AsyncAudioSource, Transcriber
 from hearken.types import SpeechSegment, DetectorConfig
 from hearken.vad.energy import EnergyVAD
 
@@ -70,6 +71,51 @@ class SpeechAudioSource(AudioSource):
 
         self.frame_count += 1
         return samples.tobytes()
+
+    @property
+    def sample_rate(self) -> int:
+        return 16000
+
+    @property
+    def sample_width(self) -> int:
+        return 2
+
+
+class MockAsyncAudioSource(AsyncAudioSource):
+    """Mock async audio source that generates speech-like audio."""
+
+    def __init__(self, max_chunks: int = 30):
+        self.is_closed = False
+        self.frame_count = 0
+        self.max_chunks = max_chunks
+
+    def close(self) -> None:
+        self.is_closed = True
+
+    async def stream(self):
+        """Async generator that yields audio chunks."""
+        # 16kHz, 30ms frames = 480 samples per chunk
+        num_samples = 480
+
+        while self.frame_count < self.max_chunks and not self.is_closed:
+            # Simulate async I/O with small delay
+            await asyncio.sleep(0.01)
+
+            # silence/speech pattern
+            if self.frame_count < 6:
+                samples = np.random.randint(-50, 50, size=num_samples, dtype=np.int16)
+            else:
+                # Generate pattern: 12 frames of speech, then 6 frames of silence
+                adjusted_frame = (self.frame_count - 6) % 18
+                if adjusted_frame < 12:
+                    # Speech frames (very high energy for reliable detection)
+                    samples = np.random.randint(-20000, 20000, size=num_samples, dtype=np.int16)
+                else:
+                    # Silence frames (low energy)
+                    samples = np.random.randint(-50, 50, size=num_samples, dtype=np.int16)
+
+            self.frame_count += 1
+            yield samples.tobytes()
 
     @property
     def sample_rate(self) -> int:
@@ -206,3 +252,80 @@ def test_listener_wait_for_speech():
     # Segment should be detected
     assert segment is not None, f"Expected segment but got None (waited {elapsed:.2f}s)"
     assert segment.duration > 0
+
+
+def test_async_audio_source():
+    """Test AsyncAudioSource with event loop integration."""
+    import time
+    import threading
+
+    # Create a new event loop for the async source
+    loop = asyncio.new_event_loop()
+
+    # Run the event loop in a separate thread
+    def run_loop():
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    loop_thread = threading.Thread(target=run_loop, daemon=True)
+    loop_thread.start()
+    time.sleep(0.05)
+
+    source = MockAsyncAudioSource(max_chunks=20)
+
+    # Create listener with async source and event loop
+    listener = Listener(source=source, event_loop=loop)
+
+    # Start and briefly run the listener
+    listener.start()
+    time.sleep(0.3)
+    listener.stop()
+
+    # Stop the event loop
+    loop.call_soon_threadsafe(loop.stop)
+    loop_thread.join(timeout=1.0)
+
+    # If we got here without errors, async audio source is working
+    assert source.is_closed
+
+def test_async_audio_source_wait_for_speech():
+    """Test AsyncAudioSource with wait_for_speech() in active mode."""
+    import time
+    import threading
+
+    # Create a new event loop for the async source
+    loop = asyncio.new_event_loop()
+
+    # Run the event loop in a separate thread
+    def run_loop():
+        asyncio.set_event_loop(loop)
+        loop.run_forever()
+
+    loop_thread = threading.Thread(target=run_loop, daemon=True)
+    loop_thread.start()
+    time.sleep(0.05)
+
+    source = MockAsyncAudioSource(max_chunks=50)
+    config = DetectorConfig(
+        min_speech_duration=0.09,  # 3 frames at 30ms
+        silence_timeout=0.12,  # 4 frames at 30ms
+    )
+
+    # Create listener with async source
+    listener = Listener(source=source, detector_config=config, event_loop=loop)
+    listener.start()
+
+    # Give system a moment to start processing
+    time.sleep(0.1)
+
+    # Wait for speech segment with generous timeout
+    segment = listener.wait_for_speech(timeout=3.0)
+
+    listener.stop()
+    loop.call_soon_threadsafe(loop.stop)
+    loop_thread.join(timeout=1.0)
+
+    # Verify a segment was detected
+    assert segment is not None, "Expected to detect speech segment from async audio source"
+    assert segment.duration > 0
+    print(f"Detected segment: {segment.duration:.3f}s")
